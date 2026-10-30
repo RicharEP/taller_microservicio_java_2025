@@ -1,0 +1,27 @@
+# Microservicio autónomo: aún no se integra a Config Server ni a Eureka.
+server:
+  port: 8085
+
+spring:
+  application:
+    name: ms-negocio-producto
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/BD_PRODUCTO
+    username: postgres
+    password: admin
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # el esquema lo gestiona BD_PRODUCTO.sql
+    properties:
+      hibernate:
+        default_schema: sys
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
