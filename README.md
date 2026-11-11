@@ -24,9 +24,9 @@ Originalmente, el microservicio `ms-negocio-producto` se encontraba aislado y au
 ---
 
 ## 3. Tecnologías y Versiones Utilizadas
-* **Java:** OpenJDK / JDK 17+ (Compilado y validado en Java 20 con bytecode target 17).
-* **Spring Boot:** 3.1.3
-* **Spring Cloud:** 2022.0.5 (Release Train compatible con Boot 3.1.x)
+* **Java:** JDK 17 (versión usada para la compilación y las pruebas actuales).
+* **Spring Boot:** 3.0.13 en Config Server y producto.
+* **Spring Cloud:** 2022.0.5 (Release Train compatible con Boot 3.0.x).
 * **Gestores de Construcción:**
   * Maven 3.9.6 (en `ms-negocio-producto`)
   * Gradle 8.2.1 con Gradle Wrapper (en módulos administrativos y servicios de gestión)
@@ -124,14 +124,18 @@ En `InventarioServiceImpl`:
 ## 8. Orden de Inicio y Ejecución del Sistema
 
 ### Paso 1: Iniciar Base de Datos PostgreSQL
-Mediante Docker Compose:
-```bash
-docker compose up -d
+Mediante Docker Compose en PowerShell:
+```powershell
+$env:PRODUCTO_DB_PORT = '55432'
+$env:DB_PORT = '55432'
+docker compose up -d --wait postgres-producto
 ```
 O conectándose a una instancia local existente de PostgreSQL y ejecutando el script `BD_PRODUCTO.sql`.
 
+Para ejecutar todos los servicios, configurar las bases y usar los puertos alternativos de Windows, consulte [el manual paso a paso](docs/MANUAL_EJECUCION.md).
+
 ### Paso 2: Iniciar el Config Server
-```bash
+```powershell
 cd ms-administration-server-configuration
 .\gradlew.bat bootRun
 ```
@@ -139,12 +143,13 @@ cd ms-administration-server-configuration
 *Configuración servida para dev:* `http://localhost:8890/ms-negocio-producto/dev`
 
 ### Paso 3: Iniciar `ms-negocio-producto`
-En perfil de desarrollo (`dev`):
-```bash
+En otra terminal, desde la raíz del repositorio, con `DB_PORT=55432` y JDK 17, usar el perfil de desarrollo (`dev`):
+```powershell
 cd ms-negocio-producto
-mvn spring-boot:run -Dspring-boot.run.profiles=dev
+mvn package
+java -jar .\target\ms-negocio-producto-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev --server.port=18085
 ```
-*Endpoint de salud:* `http://localhost:8085/actuator/health`
+*Endpoint de salud:* `http://localhost:18085/actuator/health`
 
 ---
 
@@ -171,7 +176,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=dev
 El proyecto incluye el script de automatización completo `test_full_lab12.ps1` que ejecuta y valida:
 
 1. **Arranque y verificación del Config Server:** Comprueba `HTTP 200` y `status: UP` en puerto 8890.
-2. **Arranque de `ms-negocio-producto` (perfil `dev`):** Se enlaza al Config Server y obtiene el puerto 8085 y la conexión a BD.
+2. **Arranque de `ms-negocio-producto` (perfil `dev`):** Se enlaza al Config Server y usa el puerto 18085 en la prueba automatizada (8085 sigue siendo el valor de configuración base).
 3. **Inspección de parámetro en Actuator:** `/actuator/env/inventario.max-unidades-por-movimiento` reporta valor `50` proveniente de `ms-negocio-producto-dev.yml`.
 4. **Creación de producto:** Registra `PROD-001` con stock mínimo de 5.
 5. **Prueba de límite operativo:** Se intenta registrar una entrada de 60 unidades. El sistema responde `HTTP 422 Unprocessable Entity` con el mensaje:  
@@ -181,11 +186,11 @@ El proyecto incluye el script de automatización completo `test_full_lab12.ps1` 
 8. **Reintento sin reiniciar:** Se envía nuevamente la entrada de 60 unidades. El sistema responde `HTTP 201 Created` y actualiza el stock a 60 unidades sin haber reiniciado el proceso.
 9. **Prueba de alerta de stock bajo:** Se registra una salida de 57 unidades dejando el stock en 3 (< 5). Se verifica en consola el mensaje `WARN: ALERTA STOCK BAJO`.
 10. **Comprobación sin perfil (default):** Se levanta el servicio sin perfil y el límite vuelve a `1000` (definido en el archivo base).
-11. **Comprobación de precedencia:** Se levanta con `--server.port=9085`. Actuator confirma que el argumento de línea de comandos prevalece sobre el Config Server (`commandLineArgs`).
+11. **Comprobación de precedencia:** Se levanta con `--server.port=19085`. Actuator confirma que el argumento de línea de comandos prevalece sobre el Config Server (`commandLineArgs`).
 
 Para ejecutar la suite completa:
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\test_full_lab12.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\test_full_lab12.ps1 -DatabasePort 55432 -ProductPort 18085 -OverridePort 19085
 ```
 
 ---

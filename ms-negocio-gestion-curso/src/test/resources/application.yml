@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: ms-negocio-gestion-curso-test
+  cloud:
+    config:
+      enabled: false
+  datasource:
+    url: jdbc:h2:mem:curso;INIT=CREATE SCHEMA IF NOT EXISTS SYS
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+
+eureka:
+  client:
+    enabled: false

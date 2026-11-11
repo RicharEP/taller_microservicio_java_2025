@@ -1,17 +1,10 @@
 
 
-CREATE DATABASE "BD_SEMESTRE"
-    WITH
-    OWNER = postgres
-    ENCODING = 'UTF8'
-    LC_COLLATE = 'Spanish_Peru.1252'
-    LC_CTYPE = 'Spanish_Peru.1252'
-    TABLESPACE = pg_default
-    CONNECTION LIMIT = -1
-    IS_TEMPLATE = False;
+
+-- Ejecutar conectado a BD_SEMESTRE, creada previamente por el administrador.
 	
 	
-create schema sys;
+CREATE SCHEMA IF NOT EXISTS sys;
 
 CREATE SEQUENCE IF NOT EXISTS sys.semestre_detalle_id_seq
     INCREMENT 1
@@ -44,9 +37,6 @@ CREATE TABLE IF NOT EXISTS sys.semestre
     semestre character varying(100) COLLATE pg_catalog."default",
     CONSTRAINT id_semestre_pkey PRIMARY KEY (id_semestre)
 )
-WITH (
-    OIDS = FALSE
-)
 TABLESPACE pg_default;
 
 ALTER TABLE IF EXISTS sys.semestre
@@ -67,9 +57,6 @@ CREATE TABLE IF NOT EXISTS sys.semestre_detalle
         REFERENCES sys.semestre (id_semestre) MATCH SIMPLE
         ON UPDATE CASCADE
         ON DELETE CASCADE
-)
-WITH (
-    OIDS = FALSE
 )
 TABLESPACE pg_default;
 

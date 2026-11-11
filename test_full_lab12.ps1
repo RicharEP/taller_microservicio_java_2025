@@ -1,212 +1,140 @@
-﻿$env:JAVA_HOME = "C:\Program Files\Java\jdk-20"
-$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+﻿param(
+    [int]$DatabasePort = 55432,
+    [int]$ProductPort = 18085,
+    [int]$OverridePort = 19085
+)
 
-$configJar = (Resolve-Path "ms-administration-server-configuration\build\libs\ms-administration-server-configuration-0.0.1-SNAPSHOT.jar").Path
-$productoJar = (Resolve-Path "ms-negocio-producto\target\ms-negocio-producto-0.0.1-SNAPSHOT.jar").Path
-$repoDir = (Resolve-Path "ms-administration-data-configuration").Path
-$searchLoc = "file:///" + ($repoDir -replace '\\', '/')
-$env:CONFIG_REPO_PATH = $searchLoc
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $root
 
-# Limpiar BD para la prueba
-docker exec -i postgres-producto psql -U postgres -d BD_PRODUCTO -c "TRUNCATE TABLE sys.movimiento_inventario, sys.producto RESTART IDENTITY CASCADE;" > $null
-
-Write-Host "=========================================================="
-Write-Host " PRUEBAS DE INTEGRACION Y PARAMETRIZACION - LABORATORIO 12"
-Write-Host "=========================================================="
-
-# 1. Iniciar Config Server
-Write-Host "`n[PASO 1] Iniciando Spring Cloud Config Server en puerto 8890..."
-$configProc = Start-Process -FilePath "$env:JAVA_HOME\bin\java.exe" `
-    -ArgumentList "-DCONFIG_REPO_PATH=`"$searchLoc`"", "-jar", "`"$configJar`"" `
-    -RedirectStandardOutput "cs_run.log" `
-    -RedirectStandardError "cs_run_err.log" `
-    -PassThru
-
-$csUp = $false
-for ($i = 0; $i -lt 30; $i++) {
-    Start-Sleep -Seconds 1
+$javaHome = if ($env:JAVA_HOME) { $env:JAVA_HOME } else { 'C:\Program Files\Java\jdk-17' }
+$java = Join-Path $javaHome 'bin\java.exe'
+$configJar = Join-Path $root 'ms-administration-server-configuration\build\libs\ms-administration-server-configuration-0.0.1-SNAPSHOT.jar'
+$productoJar = Join-Path $root 'ms-negocio-producto\target\ms-negocio-producto-0.0.1-SNAPSHOT.jar'
+foreach ($file in @($java, $configJar, $productoJar)) {
+    if (-not (Test-Path -LiteralPath $file)) { throw "Falta el archivo requerido: $file" }
+}
+if ($ProductPort -eq $OverridePort -or $ProductPort -eq 8890 -or $OverridePort -eq 8890) {
+    throw 'Los puertos de Config Server, producto y precedencia deben ser distintos'
+}
+foreach ($port in @(8890, $ProductPort, $OverridePort)) {
+    $client = [Net.Sockets.TcpClient]::new()
     try {
-        $res = Invoke-RestMethod -Uri "http://localhost:8890/actuator/health" -TimeoutSec 2 -ErrorAction Stop
-        if ($res.status -eq "UP") { $csUp = $true; break }
-    } catch {}
+        $client.Connect('127.0.0.1', $port)
+        throw "El puerto $port ya está ocupado; detenga el servicio existente antes de la prueba"
+    } catch [Net.Sockets.SocketException] {
+        # Conexión rechazada: no hay otro servicio escuchando.
+    } finally {
+        $client.Close()
+    }
 }
 
-if (-not $csUp) {
-    Write-Host "ERROR: Config Server no levantó."
-    exit 1
+$runDir = Join-Path ([IO.Path]::GetTempPath()) ('lab12-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $runDir | Out-Null
+Copy-Item -Path (Join-Path $root 'ms-administration-data-configuration\*.yml') -Destination $runDir
+$env:CONFIG_REPO_PATH = 'file:///' + $runDir.Replace('\', '/')
+$env:DB_HOST = 'localhost'
+$env:DB_PORT = [string]$DatabasePort
+$env:DB_USER = 'postgres'
+if (-not $env:DB_PASSWORD) { $env:DB_PASSWORD = 'admin' }
+$productoUrl = "http://localhost:$ProductPort"
+$overrideUrl = "http://localhost:$OverridePort"
+
+function Wait-Health([string]$url, [string]$service) {
+    for ($i = 0; $i -lt 70; $i++) {
+        try {
+            $health = Invoke-RestMethod -Uri "$url/actuator/health" -TimeoutSec 2
+            if ($health.status -eq 'UP') { return }
+        } catch { }
+        Start-Sleep -Seconds 1
+    }
+    throw "$service no llegó al estado UP en $url. Revisar los logs en $runDir"
 }
-Write-Host "Config Server UP en http://localhost:8890"
 
-# 2. Iniciar ms-negocio-producto con perfil dev
-Write-Host "`n[PASO 2] Iniciando ms-negocio-producto con perfil 'dev'..."
-$devProc = Start-Process -FilePath "$env:JAVA_HOME\bin\java.exe" `
-    -ArgumentList "-Dspring.profiles.active=dev", "-jar", "`"$productoJar`"" `
-    -RedirectStandardOutput "prod_dev.log" `
-    -RedirectStandardError "prod_dev_err.log" `
-    -PassThru
-
-$prodUp = $false
-for ($i = 0; $i -lt 35; $i++) {
-    Start-Sleep -Seconds 1
-    try {
-        $res = Invoke-RestMethod -Uri "http://localhost:8085/actuator/health" -TimeoutSec 2 -ErrorAction Stop
-        if ($res.status -eq "UP") { $prodUp = $true; break }
-    } catch {}
+function Assert-Equal($actual, $expected, [string]$label) {
+    if ([string]$actual -ne [string]$expected) {
+        throw "${label}: se esperaba '$expected', se recibió '$actual'"
+    }
+    Write-Host "OK: $label = $expected"
 }
 
-if (-not $prodUp) {
-    Write-Host "ERROR: ms-negocio-producto no levantó en puerto 8085."
-    Get-Content "prod_dev.log" -Tail 30
-    Get-Content "prod_dev_err.log" -Tail 30
-    Stop-Process -Id $configProc.Id -Force
-    exit 1
+function Start-Java([string[]]$arguments, [string]$name) {
+    $stdout = Join-Path $runDir "$name.log"
+    $stderr = Join-Path $runDir "$name.err.log"
+    return Start-Process -FilePath $java -ArgumentList $arguments -WorkingDirectory $root `
+        -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WindowStyle Hidden -PassThru
 }
-Write-Host "ms-negocio-producto UP en http://localhost:8085 con perfil 'dev'"
 
-# 3. Verificar parametro inicial de inventario en dev (50)
-Write-Host "`n[PASO 3] Consultando parametro inventario.max-unidades-por-movimiento..."
-$envParam = Invoke-RestMethod -Uri "http://localhost:8085/actuator/env/inventario.max-unidades-por-movimiento"
-Write-Host "Valor en Actuator /env: $($envParam.property.value) (Origen: $($envParam.property.source))"
-
-# 4. Crear un producto de prueba
-Write-Host "`n[PASO 4] Creando producto 'Laptop ThinkPad' via POST /api/productos..."
-$nuevoProd = @{
-    codigo = "PROD-001"
-    nombre = "Laptop ThinkPad"
-    descripcion = "Laptop Lenovo Core i7 16GB"
-    precio = 3500.00
-    stockMinimo = 5
-} | ConvertTo-Json
-
-$prodResponse = Invoke-RestMethod -Uri "http://localhost:8085/api/productos" -Method Post -Body $nuevoProd -ContentType "application/json"
-Write-Host "Producto creado exitosamente: ID=$($prodResponse.id), Codigo=$($prodResponse.codigo), Stock=$($prodResponse.stockActual)"
-$prodId = $prodResponse.id
-
-# 5. Probar registrar entrada de 60 unidades (Debe fallar con 422: limite 50)
-Write-Host "`n[PASO 5] Registrando entrada de 60 unidades (límite en dev es 50)..."
-$mov60 = @{
-    productoId = $prodId
-    cantidad = 60
-    motivo = "Lote inicial de 60 unidades"
-} | ConvertTo-Json
-
+$configProc = $null
+$productoProc = $null
 try {
-    $resp = Invoke-RestMethod -Uri "http://localhost:8085/api/inventario/entradas" -Method Post -Body $mov60 -ContentType "application/json"
-    Write-Host "INCORRECTO: La solicitud no debio ser aceptada: $resp"
-} catch {
-    $statusCode = $_.Exception.Response.StatusCode.value__
-    $errorBody = (New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())).ReadToEnd()
-    Write-Host "CORRECTO: Petición rechazada con HTTP $statusCode"
-    Write-Host "Cuerpo de error recibido: $errorBody"
-}
+    $configProc = Start-Java @('-jar', "`"$configJar`"") 'config-server'
+    Wait-Health 'http://localhost:8890' 'Config Server'
+    $remote = Invoke-RestMethod -Uri 'http://localhost:8890/ms-negocio-producto/dev'
+    if (-not $remote.propertySources) { throw 'Config Server no publicó la configuración dev' }
+    Write-Host 'OK: Config Server publica el perfil dev'
 
-# 6. Modificar max-unidades-por-movimiento a 100 en ms-negocio-producto-dev.yml
-Write-Host "`n[PASO 6] Modificando límite a 100 unidades en ms-negocio-producto-dev.yml..."
-$devYmlPath = "ms-administration-data-configuration\ms-negocio-producto-dev.yml"
-$nuevoContenidoDev = @"
-spring:
-  jpa:
-    show-sql: true
-logging:
-  level:
-    com.homerios.msnegocioproducto: DEBUG
+    $productoProc = Start-Java @('-Dspring.profiles.active=dev', '-jar', "`"$productoJar`"", "--server.port=$ProductPort") 'producto-dev'
+    Wait-Health $productoUrl 'Producto dev'
+    $envValue = Invoke-RestMethod -Uri "$productoUrl/actuator/env/inventario.max-unidades-por-movimiento"
+    Assert-Equal $envValue.property.value 50 'Límite dev inicial'
 
-inventario:
-  max-unidades-por-movimiento: 100 # Modificado para prueba de refresco en caliente
-  alerta-stock-bajo: true
-"@
-Set-Content -Path $devYmlPath -Value $nuevoContenidoDev -Encoding utf8
-Write-Host "Archivo ms-negocio-producto-dev.yml actualizado."
+    $codigo = 'LAB12-' + [guid]::NewGuid().ToString('N').Substring(0, 10)
+    $nuevoProducto = @{ codigo = $codigo; nombre = 'Producto de prueba'; precio = 100; stockMinimo = 5 } | ConvertTo-Json
+    $producto = Invoke-RestMethod -Uri "$productoUrl/api/productos" -Method Post -Body $nuevoProducto -ContentType 'application/json'
+    if (-not $producto.id) { throw 'La creación del producto no devolvió un identificador' }
+    Write-Host "OK: producto creado con ID $($producto.id)"
 
-# 7. Disparar refresco en caliente vía Actuator /refresh (con Content-Type application/json)
-Write-Host "`n[PASO 7] Disparando refresco en caliente POST http://localhost:8085/actuator/refresh..."
-$refreshResp = Invoke-RestMethod -Uri "http://localhost:8085/actuator/refresh" -Method Post -ContentType "application/json" -Body "{}"
-Write-Host "Respuesta de /actuator/refresh (Claves actualizadas): $($refreshResp | ConvertTo-Json -Compress)"
-
-# 8. Reintentar registrar entrada de 60 unidades (Ahora debe ser aceptada sin reiniciar)
-Write-Host "`n[PASO 8] Reintentando entrada de 60 unidades tras refresco en caliente..."
-$mov60Aceptado = Invoke-RestMethod -Uri "http://localhost:8085/api/inventario/entradas" -Method Post -Body $mov60 -ContentType "application/json"
-Write-Host "CORRECTO: Entrada aceptada sin reiniciar el microservicio!"
-Write-Host "Movimiento ID=$($mov60Aceptado.id), Tipo=$($mov60Aceptado.tipo), Cantidad=$($mov60Aceptado.cantidad), Stock Resultante=$($mov60Aceptado.stockResultante)"
-
-# 9. Probar salida y alerta de stock bajo (seccion 15 ejercicio 5)
-Write-Host "`n[PASO 9] Probando salida de 57 unidades para disparar alerta de stock bajo (stock actual quedara en 3 < minimo 5)..."
-$salida57 = @{
-    productoId = $prodId
-    cantidad = 57
-    motivo = "Venta a cliente corporativo"
-} | ConvertTo-Json
-
-$salidaResp = Invoke-RestMethod -Uri "http://localhost:8085/api/inventario/salidas" -Method Post -Body $salida57 -ContentType "application/json"
-Write-Host "Salida registrada: ID=$($salidaResp.id), Tipo=$($salidaResp.tipo), Cantidad=$($salidaResp.cantidad), Stock Resultante=$($salidaResp.stockResultante)"
-Start-Sleep -Seconds 1
-$logsBajo = Get-Content "prod_dev.log" | Select-String "ALERTA STOCK BAJO"
-if ($logsBajo) {
-    Write-Host "Log de alerta verificado en consola: $logsBajo"
-}
-
-# Detener proceso dev
-Stop-Process -Id $devProc.Id -Force
-Write-Host "`nms-negocio-producto (dev) detenido."
-
-# Restaurar dev yml a 50
-$restoreDev = @"
-spring:
-  jpa:
-    show-sql: true
-logging:
-  level:
-    com.homerios.msnegocioproducto: DEBUG
-
-inventario:
-  max-unidades-por-movimiento: 50 # en dev probamos el límite con cantidades pequeñas
-  alerta-stock-bajo: true
-"@
-Set-Content -Path $devYmlPath -Value $restoreDev -Encoding utf8
-
-# 10. Probar sin perfil (default) -> Limite vuelve a 1000
-Write-Host "`n[PASO 10] Iniciando ms-negocio-producto sin perfil (default -> límite 1000)..."
-$baseProc = Start-Process -FilePath "$env:JAVA_HOME\bin\java.exe" `
-    -ArgumentList "-jar", "`"$productoJar`"" `
-    -RedirectStandardOutput "prod_base.log" `
-    -RedirectStandardError "prod_base_err.log" `
-    -PassThru
-
-for ($i = 0; $i -lt 30; $i++) {
-    Start-Sleep -Seconds 1
+    $entrada = @{ productoId = $producto.id; cantidad = 60; motivo = 'Prueba de refresco' } | ConvertTo-Json
+    $rejected = $false
     try {
-        $res = Invoke-RestMethod -Uri "http://localhost:8085/actuator/health" -TimeoutSec 2 -ErrorAction Stop
-        if ($res.status -eq "UP") { break }
-    } catch {}
+        Invoke-RestMethod -Uri "$productoUrl/api/inventario/entradas" -Method Post -Body $entrada -ContentType 'application/json' | Out-Null
+    } catch {
+        $status = [int]$_.Exception.Response.StatusCode
+        if ($status -ne 422) { throw "La entrada devolvió HTTP $status en vez de 422" }
+        $rejected = $true
+    }
+    if (-not $rejected) { throw 'Se aceptó una entrada superior al límite dev inicial' }
+    Write-Host 'OK: la entrada de 60 unidades fue rechazada con HTTP 422'
+
+    $devConfig = Join-Path $runDir 'ms-negocio-producto-dev.yml'
+    $oldContent = [IO.File]::ReadAllText($devConfig)
+    $newContent = $oldContent -replace 'max-unidades-por-movimiento:\s*50', 'max-unidades-por-movimiento: 100'
+    if ($newContent -eq $oldContent) { throw 'No se encontró el límite dev de 50 en la copia de configuración' }
+    [IO.File]::WriteAllText($devConfig, $newContent, [Text.UTF8Encoding]::new($false))
+    Invoke-RestMethod -Uri "$productoUrl/actuator/refresh" -Method Post -Body '{}' -ContentType 'application/json' | Out-Null
+    $envValue = Invoke-RestMethod -Uri "$productoUrl/actuator/env/inventario.max-unidades-por-movimiento"
+    Assert-Equal $envValue.property.value 100 'Límite tras refresh'
+
+    $movimiento = Invoke-RestMethod -Uri "$productoUrl/api/inventario/entradas" -Method Post -Body $entrada -ContentType 'application/json'
+    Assert-Equal $movimiento.stockResultante 60 'Stock tras entrada'
+    $salida = @{ productoId = $producto.id; cantidad = 57; motivo = 'Prueba de stock bajo' } | ConvertTo-Json
+    $movimiento = Invoke-RestMethod -Uri "$productoUrl/api/inventario/salidas" -Method Post -Body $salida -ContentType 'application/json'
+    Assert-Equal $movimiento.stockResultante 3 'Stock tras salida'
+    if (-not (Select-String -LiteralPath (Join-Path $runDir 'producto-dev.log') -Pattern 'ALERTA STOCK BAJO' -Quiet)) {
+        throw 'No se encontró la alerta de stock bajo en el log'
+    }
+    Write-Host 'OK: alerta de stock bajo registrada'
+
+    Stop-Process -Id $productoProc.Id -Force
+    $productoProc = $null
+    Start-Sleep -Seconds 2
+    $productoProc = Start-Java @('-jar', "`"$productoJar`"", "--server.port=$ProductPort") 'producto-default'
+    Wait-Health $productoUrl 'Producto default'
+    $envValue = Invoke-RestMethod -Uri "$productoUrl/actuator/env/inventario.max-unidades-por-movimiento"
+    Assert-Equal $envValue.property.value 1000 'Límite default'
+
+    Stop-Process -Id $productoProc.Id -Force
+    $productoProc = $null
+    Start-Sleep -Seconds 2
+    $productoProc = Start-Java @('-jar', "`"$productoJar`"", "--server.port=$OverridePort") 'producto-puerto'
+    Wait-Health $overrideUrl 'Producto en puerto alternativo'
+    $port = Invoke-RestMethod -Uri "$overrideUrl/actuator/env/server.port"
+    Assert-Equal $port.property.value $OverridePort 'Precedencia de server.port'
+    Write-Host 'LABORATORIO 12 COMPLETADO SIN FALLOS'
+} finally {
+    if ($productoProc -and -not $productoProc.HasExited) { Stop-Process -Id $productoProc.Id -Force }
+    if ($configProc -and -not $configProc.HasExited) { Stop-Process -Id $configProc.Id -Force }
+    Write-Host "Logs y configuración temporal: $runDir"
 }
-
-$envBase = Invoke-RestMethod -Uri "http://localhost:8085/actuator/env/inventario.max-unidades-por-movimiento"
-Write-Host "Valor en Actuator /env (sin perfil): $($envBase.property.value) (Origen: $($envBase.property.source))"
-Stop-Process -Id $baseProc.Id -Force
-
-# 11. Probar precedencia de argumentos de línea de comando (--server.port=9085)
-Write-Host "`n[PASO 11] Probando precedencia con --server.port=9085..."
-$argProc = Start-Process -FilePath "$env:JAVA_HOME\bin\java.exe" `
-    -ArgumentList "-jar", "`"$productoJar`"", "--server.port=9085" `
-    -RedirectStandardOutput "prod_arg.log" `
-    -RedirectStandardError "prod_arg_err.log" `
-    -PassThru
-
-for ($i = 0; $i -lt 30; $i++) {
-    Start-Sleep -Seconds 1
-    try {
-        $res = Invoke-RestMethod -Uri "http://localhost:9085/actuator/health" -TimeoutSec 2 -ErrorAction Stop
-        if ($res.status -eq "UP") { break }
-    } catch {}
-}
-
-$portEnv = Invoke-RestMethod -Uri "http://localhost:9085/actuator/env/server.port"
-Write-Host "Puerto en Actuator /env: $($portEnv.property.value) (Origen: $($portEnv.property.source))"
-Stop-Process -Id $argProc.Id -Force
-
-# Detener Config Server
-Stop-Process -Id $configProc.Id -Force
-Write-Host "`nTodos los servicios detenidos exitosamente."
-Write-Host "=========================================================="
-Write-Host " TODAS LAS PRUEBAS DEL LABORATORIO 12 COMPLETADAS CON EXITO"
-Write-Host "=========================================================="

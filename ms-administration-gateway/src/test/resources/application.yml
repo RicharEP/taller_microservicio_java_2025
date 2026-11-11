@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: ms-administration-gateway-test
+  cloud:
+    config:
+      enabled: false
+
+eureka:
+  client:
+    enabled: false

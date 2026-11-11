@@ -1,20 +1,5 @@
--- Database: BD_PRODUCTO
--- Ejecutar el bloque CREATE DATABASE conectado a la BD "postgres";
--- luego conectarse a BD_PRODUCTO para ejecutar el resto.
-
--- DROP DATABASE IF EXISTS "BD_PRODUCTO";
-
-CREATE DATABASE "BD_PRODUCTO"
-    WITH
-    OWNER = postgres
-    ENCODING = 'UTF8'
-    LC_COLLATE = 'Spanish_Peru.1252'
-    LC_CTYPE = 'Spanish_Peru.1252'
-    TABLESPACE = pg_default
-    CONNECTION LIMIT = -1
-    IS_TEMPLATE = False;
-
--- ===== Conectarse a BD_PRODUCTO a partir de aqui =====
+-- Ejecutar conectado a BD_PRODUCTO. Docker Compose crea esa base mediante POSTGRES_DB.
+-- En PostgreSQL local: crear primero la base con createdb y luego aplicar este archivo.
 
 CREATE SCHEMA IF NOT EXISTS sys;
 

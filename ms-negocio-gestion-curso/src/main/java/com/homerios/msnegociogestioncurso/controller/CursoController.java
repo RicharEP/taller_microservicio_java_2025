@@ -1,10 +1,10 @@
 package com.homerios.msnegociogestioncurso.controller;
 
 import java.util.List;
-import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 import com.homerios.msnegociogestioncurso.model.Curso;
 import com.homerios.msnegociogestioncurso.repository.CursoRepository;
@@ -27,19 +28,20 @@ public class CursoController {
 	}
 
 	@GetMapping("/curso/{id}")
-	public Optional<Curso> busCurso(@PathVariable("id") String id) {
-		Long id_curso = Long.parseLong(id);
-		return cursoRepository.findById(id_curso);
+	public ResponseEntity<Curso> busCurso(@PathVariable("id") Long id) {
+		return cursoRepository.findById(id).map(ResponseEntity::ok)
+				.orElseGet(() -> ResponseEntity.notFound().build());
 	}
 
 	@PostMapping("/curso")
-	public Curso crearDocente(@RequestBody Curso nCurso) {
+	@ResponseStatus(HttpStatus.CREATED)
+	public Curso crearCurso(@RequestBody Curso nCurso) {
 		Curso tCurso = new Curso();
 		tCurso.setNombre(nCurso.getNombre());
 		tCurso.setCredito(nCurso.getCredito());
 		tCurso.setId_docente(nCurso.getId_docente());
 
-		return cursoRepository.save(nCurso);
+		return cursoRepository.save(tCurso);
 	}
 
 	@PutMapping("/curso/{id}")
@@ -66,9 +68,11 @@ public class CursoController {
 	 */
 
 	@DeleteMapping("/curso/{id}")
-	public boolean deleteCurso(@PathVariable("id") Long id) {
-		Long id_curso = id; // Long.parseLong(id);
-		cursoRepository.deleteById(id_curso);
-		return true;
+	public ResponseEntity<Void> deleteCurso(@PathVariable("id") Long id) {
+		if (!cursoRepository.existsById(id)) {
+			return ResponseEntity.notFound().build();
+		}
+		cursoRepository.deleteById(id);
+		return ResponseEntity.noContent().build();
 	}
 }

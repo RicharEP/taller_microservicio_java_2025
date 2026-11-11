@@ -1,18 +1,7 @@
--- Database: BD_CURSO
 
--- DROP DATABASE IF EXISTS "BD_CURSO";
-
-CREATE DATABASE "BD_CURSO"
-    WITH
-    OWNER = postgres
-    ENCODING = 'UTF8'
-    LC_COLLATE = 'Spanish_Peru.1252'
-    LC_CTYPE = 'Spanish_Peru.1252'
-    TABLESPACE = pg_default
-    CONNECTION LIMIT = -1
-    IS_TEMPLATE = False;
+-- Ejecutar conectado a BD_CURSO, creada previamente por el administrador.
 	
-	create schema sys;
+	CREATE SCHEMA IF NOT EXISTS sys;
 	
 	CREATE SEQUENCE IF NOT EXISTS sys.curso_id_seq
     INCREMENT 1
@@ -32,9 +21,6 @@ CREATE TABLE IF NOT EXISTS sys.curso
     credito integer,
     id_docente integer,
     CONSTRAINT curso_pkey PRIMARY KEY (id_curso)
-)
-WITH (
-    OIDS = FALSE
 )
 TABLESPACE pg_default;
 

@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: ms-administration-server-record-test
+  cloud:
+    config:
+      enabled: false
+
+eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
