@@ -1,0 +1,10 @@
+﻿spring:
+  jpa:
+    show-sql: true
+logging:
+  level:
+    com.homerios.msnegocioproducto: DEBUG
+
+inventario:
+  max-unidades-por-movimiento: 50 # en dev probamos el límite con cantidades pequeñas
+  alerta-stock-bajo: true

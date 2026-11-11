@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/BD_PRODUCTO_QA
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:admin}
+  jpa:
+    show-sql: false
+logging:
+  level:
+    com.homerios.msnegocioproducto: INFO
+
+inventario:
+  max-unidades-por-movimiento: 200
+  alerta-stock-bajo: true

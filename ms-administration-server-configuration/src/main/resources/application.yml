@@ -1,14 +1,27 @@
 server:
   port: 8890
+
 spring:
   application:
     name: ms-administration-server-configuration
-
-#Configuracion Local
   profiles:
-    active: native
+    active: ${CONFIG_SERVER_PROFILE:native}
   cloud:
     config:
-      server: 
+      server:
         native:
-          searchLocations: file:///D:/2025/FIIS\TALLER - MICROSERVICIOS/ms-administration-data-configuration
+          search-locations: ${CONFIG_REPO_PATH:file:../ms-administration-data-configuration,file:./ms-administration-data-configuration,file:../../ms-administration-data-configuration}
+        git:
+          uri: ${CONFIG_GIT_URI:https://github.com/RicharEP/taller_microservicio_java_2025.git}
+          search-paths: ms-administration-data-configuration
+          default-label: ${CONFIG_GIT_LABEL:main}
+          clone-on-start: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

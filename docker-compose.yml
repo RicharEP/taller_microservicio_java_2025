@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  postgres-producto:
+    image: postgres:15-alpine
+    container_name: postgres-producto
+    environment:
+      POSTGRES_DB: BD_PRODUCTO
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./BD_PRODUCTO.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d BD_PRODUCTO"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

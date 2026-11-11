@@ -2,9 +2,12 @@ package com.homerios.msnegocioproducto.service.impl;
 
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.homerios.msnegocioproducto.config.InventarioProperties;
 import com.homerios.msnegocioproducto.dto.MovimientoRequest;
 import com.homerios.msnegocioproducto.dto.MovimientoResponse;
 import com.homerios.msnegocioproducto.dto.StockResponse;
@@ -23,18 +26,22 @@ import com.homerios.msnegocioproducto.service.InventarioService;
 @Transactional
 public class InventarioServiceImpl implements InventarioService {
 
+	private static final Logger log = LoggerFactory.getLogger(InventarioServiceImpl.class);
+
 	private final ProductoRepository productoRepository;
 	private final MovimientoInventarioRepository movimientoRepository;
 	private final ProductoMapper productoMapper;
 	private final MovimientoMapper movimientoMapper;
+	private final InventarioProperties inventarioProperties;
 
 	public InventarioServiceImpl(ProductoRepository productoRepository,
 			MovimientoInventarioRepository movimientoRepository, ProductoMapper productoMapper,
-			MovimientoMapper movimientoMapper) {
+			MovimientoMapper movimientoMapper, InventarioProperties inventarioProperties) {
 		this.productoRepository = productoRepository;
 		this.movimientoRepository = movimientoRepository;
 		this.productoMapper = productoMapper;
 		this.movimientoMapper = movimientoMapper;
+		this.inventarioProperties = inventarioProperties;
 	}
 
 	@Override
@@ -68,6 +75,10 @@ public class InventarioServiceImpl implements InventarioService {
 	}
 
 	private MovimientoResponse registrar(TipoMovimiento tipo, MovimientoRequest request) {
+		if (request.cantidad() > inventarioProperties.getMaxUnidadesPorMovimiento()) {
+			throw new ReglaNegocioException("Un movimiento no puede superar "
+					+ inventarioProperties.getMaxUnidadesPorMovimiento() + " unidades");
+		}
 		Producto producto = obtenerProducto(request.productoId());
 		if (!producto.isActivo()) {
 			throw new ReglaNegocioException("El producto " + producto.getCodigo() + " está inactivo");
@@ -75,7 +86,14 @@ public class InventarioServiceImpl implements InventarioService {
 		tipo.aplicar(producto, request.cantidad());
 		MovimientoInventario movimiento = new MovimientoInventario(producto, tipo, request.cantidad(),
 				request.motivo());
-		return movimientoMapper.toResponse(movimientoRepository.save(movimiento));
+		MovimientoInventario guardado = movimientoRepository.save(movimiento);
+
+		if (tipo == TipoMovimiento.SALIDA && inventarioProperties.isAlertaStockBajo() && producto.tieneStockBajo()) {
+			log.warn("ALERTA STOCK BAJO: Producto id={}, codigo='{}', nombre='{}' ha quedado con stock actual={}, inferior al minimo={}",
+					producto.getId(), producto.getCodigo(), producto.getNombre(), producto.getStockActual(), producto.getStockMinimo());
+		}
+
+		return movimientoMapper.toResponse(guardado);
 	}
 
 	private Producto obtenerProducto(Long id) {

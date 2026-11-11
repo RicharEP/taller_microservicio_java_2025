@@ -3,37 +3,11 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/BD_CURSO
-    username: postgres
-    password: admin
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/BD_CURSO
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:admin}
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     properties:
       hibernate:
         default_schema: sys
-        
-# Eureka Discovery Client
-
-eureka:
-   client:
-      fetch-registry: true
-      serviceUrl:
-         defaultZone: http://localhost:8889/eureka
-         
-#Metrics related configurations
-management:
-  endpoint:
-    metrics:
-      enabled: true
-    prometheus:
-      enabled: true
-    gateway:
-      enabled: true   
-  endpoints:
-      web:
-        exposure:
-          include: "*"
-  metrics:
-    export:
-      prometheus:
-        enabled: true

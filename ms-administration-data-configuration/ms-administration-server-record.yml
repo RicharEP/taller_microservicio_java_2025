@@ -2,11 +2,12 @@ server:
   port: 8889
 
 eureka:
-   instance:
-      hostname: localhost
-   client:
-        register-with-eureka: false
-        fetch-registry: false
-        serviceUrl:
-           defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka
-   wait-time-in-ms-when-sync-empty: 0
+  instance:
+    hostname: localhost
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+    serviceUrl:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka
+  server:
+    wait-time-in-ms-when-sync-empty: 0

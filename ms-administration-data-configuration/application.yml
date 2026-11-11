@@ -1,0 +1,17 @@
+# Compartido por TODOS los clientes del Config Server (Sección 5.4 del PDF)
+eureka:
+  client:
+    fetch-registry: true
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8889/eureka}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,refresh,env
+  endpoint:
+    health:
+      show-details: always
+    env:
+      show-values: always
