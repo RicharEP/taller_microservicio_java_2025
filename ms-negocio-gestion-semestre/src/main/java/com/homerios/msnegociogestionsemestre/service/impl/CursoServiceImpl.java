@@ -6,7 +6,6 @@ import com.homerios.msnegociogestionsemestre.dto.CursoDTO;
 import com.homerios.msnegociogestionsemestre.service.CursoService;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.Objects;
@@ -18,9 +17,9 @@ import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.discovery.DiscoveryClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.client.RestTemplate;
 
-@Slf4j
 @RequiredArgsConstructor
 @Component
 public class CursoServiceImpl implements CursoService {
@@ -34,16 +33,14 @@ public class CursoServiceImpl implements CursoService {
 	private DiscoveryClient discoveryClient;
 
 	private String serviceName = "ms-negocio-gestion-curso";
-	private String url = "";
 
 	@Override
 	public CursoDTO findById(Long id) {
 		CursoDTO curso = new CursoDTO();
-		this.url = this.getURI();
+		String url = this.getURI();
 
 		log.info("url {}", url);
-		System.out.println("la uri es :" + url);
-		if (this.url != null) { // validamos que el servicio se encuentre activo y registrado
+		if (url != null) {
 			url = url + "/curso/" + id;
 			ResponseEntity<CursoDTO> cursoDTO = restTemplate.getForEntity(url, CursoDTO.class);
 			if (cursoDTO.getStatusCode() == HttpStatus.OK) {
@@ -53,8 +50,10 @@ public class CursoServiceImpl implements CursoService {
 				log.info("docenteDTO  DocententeServiceImpl {}", cursoDTO);
 			}
 		}
+		if (url == null) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Servicio de cursos no disponible");
+		}
 		return curso;
-		// TODO Auto-generated method stub
 	}
 
 	private String getURI() {

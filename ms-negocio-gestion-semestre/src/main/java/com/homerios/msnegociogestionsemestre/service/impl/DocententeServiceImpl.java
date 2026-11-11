@@ -12,14 +12,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.homerios.msnegociogestionsemestre.dto.DocenteDTO;
 import com.homerios.msnegociogestionsemestre.service.DocententeService;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
-@Slf4j
 @RequiredArgsConstructor
 @Component
 public class DocententeServiceImpl implements DocententeService {
@@ -33,16 +32,14 @@ public class DocententeServiceImpl implements DocententeService {
 	private DiscoveryClient discoveryClient;
 
 	private String serviceName = "ms-negocio-gestion-docente";
-	private String url = "";
 
 	@Override
 	public DocenteDTO findById(Long id) {
 		DocenteDTO docente = new DocenteDTO();
-		this.url = this.getURI();
+		String url = this.getURI();
 		
 		log.info("url {}", url);
-		System.out.println("la uri es :" + url);
-		if (this.url != null) { //validamos que el servicio se encuentre activo y registrado
+		if (url != null) {
 			url = url + "/docente/" + id;
 			ResponseEntity<DocenteDTO> docenteDTO = restTemplate.getForEntity(url, DocenteDTO.class);
 			if (docenteDTO.getStatusCode() == HttpStatus.OK) {
@@ -52,8 +49,10 @@ public class DocententeServiceImpl implements DocententeService {
 				log.info("docenteDTO  DocententeServiceImpl {}", docenteDTO);
 			}
 		}
+		if (url == null) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Servicio de docentes no disponible");
+		}
 		return docente;
-		// TODO Auto-generated method stub
 	}
 
 	private String getURI() {

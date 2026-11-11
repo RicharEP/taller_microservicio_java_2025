@@ -3,6 +3,6 @@ spring:
     name: ms-administration-server-record
   
   config:
-    import: optional:configserver:http://localhost:8890
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8890}
 
 
